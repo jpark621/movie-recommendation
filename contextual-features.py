@@ -53,7 +53,7 @@ class Skipgram(Module):
 		return movie_probs
 
 n_dims = 5
-model = Skipgram(1000, n_movies + 1, n_dims)
+user_model = Skipgram(1000, n_movies + 1, n_dims)
 
 from torch import nn
 import torch.nn.functional as F
@@ -64,7 +64,7 @@ epochs = 5
 
 loss_fn = lambda pred, y: F.nll_loss(torch.log(pred), y)
 # optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate)
-optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+optimizer = torch.optim.Adam(user_model.parameters(), lr=learning_rate)
 
 
 def train_loop(dataloader, model, loss_fn, optimizer):
@@ -105,7 +105,44 @@ def test_loop(dataloader, model, loss_fn):
 	test_loss /= num_batches
 	print(f"Test Error: \n Avg loss: {test_loss:>8f} \n")
 
-for t in range(epochs):
-	print(f"Epoch {t+1}\n-------------------------------")
-	train_loop(train_dls, model, loss_fn, optimizer)
-	test_loop(test_dls, model, loss_fn)
+# for t in range(epochs):
+# 	print(f"Epoch {t+1}\n-------------------------------")
+# 	train_loop(train_dls, user_model, loss_fn, optimizer)
+# 	test_loop(test_dls, user_model, loss_fn)
+
+#########################
+# Train movie embeddings
+#########################
+
+dataset_size = 100000
+train_size = int(0.85 * dataset_size)
+test_size = int(0.15 * dataset_size)
+
+train_df_X = ratings[['titleId']].head(train_size)
+train_df_y = ratings[['userId']].head(train_size)
+train_ratings = MovieRecommendationsDataset(train_df_X, train_df_y)
+train_dls = DataLoader(train_ratings, batch_size=64)
+
+test_df_X = ratings[['titleId']].tail(test_size)
+test_df_y = ratings['userId'].tail(test_size)
+test_ratings = MovieRecommendationsDataset(test_df_X, test_df_y)
+test_dls = DataLoader(test_ratings, batch_size=64)
+
+n_dims = 5
+movie_model = Skipgram(n_movies + 1, 1000, n_dims)
+
+learning_rate = 5e-3
+batch_size = 64
+epochs = 5
+
+loss_fn = lambda pred, y: F.nll_loss(torch.log(pred), y)
+# optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate)
+optimizer = torch.optim.Adam(movie_model.parameters(), lr=learning_rate)
+
+# for t in range(epochs):
+# 	print(f"Epoch {t+1}\n-------------------------------")
+# 	train_loop(train_dls, movie_model, loss_fn, optimizer)
+# 	test_loop(test_dls, movie_model, loss_fn)
+
+
+
