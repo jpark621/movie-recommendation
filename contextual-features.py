@@ -63,7 +63,7 @@ batch_size = 64
 epochs = 5
 
 loss_fn = lambda pred, y: F.nll_loss(torch.log(pred), y)
-# optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate)
+# optimizer = torch.optim.SGD(user_model.parameters(), lr=learning_rate)
 optimizer = torch.optim.Adam(user_model.parameters(), lr=learning_rate)
 
 
@@ -105,10 +105,10 @@ def test_loop(dataloader, model, loss_fn):
 	test_loss /= num_batches
 	print(f"Test Error: \n Avg loss: {test_loss:>8f} \n")
 
-# for t in range(epochs):
-# 	print(f"Epoch {t+1}\n-------------------------------")
-# 	train_loop(train_dls, user_model, loss_fn, optimizer)
-# 	test_loop(test_dls, user_model, loss_fn)
+for t in range(epochs):
+	print(f"Epoch {t+1}\n-------------------------------")
+	train_loop(train_dls, user_model, loss_fn, optimizer)
+	test_loop(test_dls, user_model, loss_fn)
 
 #########################
 # Train movie embeddings
@@ -144,5 +144,85 @@ optimizer = torch.optim.Adam(movie_model.parameters(), lr=learning_rate)
 # 	train_loop(train_dls, movie_model, loss_fn, optimizer)
 # 	test_loop(test_dls, movie_model, loss_fn)
 
+##############################################
+# Predict rating task with only these features
+##############################################
 
 
+import pandas as pd
+
+ratings = pd.read_csv("ratings_100k.csv")
+movies = pd.read_csv("movies.csv", usecols=(0,1))
+ratings = ratings.merge(movies)
+ratings['titleId'] = pd.factorize(ratings['title'])[0] + 1
+ratings = ratings[['userId', 'titleId', 'rating']]
+ratings = ratings.sample(frac=1, random_state=42)
+
+n_users = len(set(ratings['userId'].values))
+n_movies = len(set(ratings['titleId'].values))
+
+import torch
+from torch.utils.data import Dataset, DataLoader
+
+class MovieRecommendationsDataset(Dataset):
+	def __init__(self, df_X, df_y):
+		self.features = torch.tensor(df_X.values, dtype=torch.int32)
+		self.labels = torch.tensor(df_y.values.flatten(), dtype=torch.float32)
+	def __len__(self):
+		return len(self.features)
+	def __getitem__(self, idx):
+		return self.features[idx], self.labels[idx]
+
+dataset_size = 100000
+train_size = int(0.85 * dataset_size)
+test_size = int(0.15 * dataset_size)
+
+train_df_X = ratings[['userId', 'titleId']].head(train_size)
+train_df_y = ratings[['rating']].head(train_size)
+train_ratings = MovieRecommendationsDataset(train_df_X, train_df_y)
+train_dls = DataLoader(train_ratings, batch_size=64)
+
+test_df_X = ratings[['userId', 'titleId']].tail(test_size)
+test_df_y = ratings['rating'].tail(test_size)
+test_ratings = MovieRecommendationsDataset(test_df_X, test_df_y)
+test_dls = DataLoader(test_ratings, batch_size=64)
+
+def sigmoid_range(x, low, high):
+	"Sigmoid function with range `(low, high)`"
+	return torch.sigmoid(x) * (high - low) + low
+
+class RegressionWithEmbeddings(Module):
+	def __init__(self, user_embeddings, movie_embeddings, y_range=[0, 5.5]):
+		super(RegressionWithEmbeddings, self).__init__()
+		self.user_embeddings = user_embeddings
+		for param in self.user_embeddings.parameters():
+			param.requires_grad = False
+		self.movie_embeddings = movie_embeddings
+		for param in self.movie_embeddings.parameters():
+			param.requires_grad = False
+		n_dims = self.user_embeddings.weight.shape[1] + self.movie_embeddings.weight.shape[1]
+		self.linear = Linear(n_dims, 1)
+		self.y_range = y_range
+		
+	def forward(self, x):
+		users = self.user_embeddings(x[:,0])
+		movies = self.movie_embeddings(x[:,1])
+		combined = torch.cat([users, movies], dim=1)
+		logits = self.linear(combined)
+		return logits
+
+regression_model = RegressionWithEmbeddings(user_model.user_embeddings, movie_model.user_embeddings)
+
+learning_rate = 5e-3
+batch_size = 64
+epochs = 5
+
+loss_fn = nn.MSELoss()
+optimizer = torch.optim.SGD(regression_model.parameters(), lr=learning_rate)
+
+# optimizer = torch.optim.Adam(regression_model.parameters(), lr=learning_rate)
+
+# for t in range(epochs):
+# 	print(f"Epoch {t+1}\n-------------------------------")
+# 	train_loop(train_dls, regression_model, loss_fn, optimizer)
+# 	test_loop(test_dls, regression_model, loss_fn)

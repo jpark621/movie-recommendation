@@ -27,3 +27,6 @@ If user a has seen a, b, c movies, we will make a loss for each target movie. Ea
  * sigmoid_range and Adam have highest gains
    * sigmoid_range forces predictions to fit a sigmoid function in range \[0, 5\] (technically 5.5 for empirical reasons).
    * Adam is a simple optimizer change.
+
+## 10.08.25
+ * Implemented Regression with Contextual Features. The regression classifier is too strong, and the contextual features have learned too little, so contextual feature gains are unseen.
